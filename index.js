@@ -1,7 +1,9 @@
 // @ts-check
 
 /** @type {HTMLTextAreaElement} */
-const target = document.querySelector('#code-editor');
+const target = document.querySelector('#code-editor-mount');
+/** @type {HTMLElement} */
+const output = document.querySelector('#output');
 
 /** @type {CodeMirror.EditorConfiguration} */
 const codeMirrorConfig = {
@@ -13,8 +15,8 @@ const codeMirrorConfig = {
 /** @type {CodeMirror.Editor} */
 const codeMirror = CodeMirror(mountReplace(target), codeMirrorConfig);
 
-codeMirror.on('change', () => {
-    console.log('changed');
+codeMirror.on('change', editor => {
+    output.innerHTML = editor.doc.getValue();
 });
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////
