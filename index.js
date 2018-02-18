@@ -21,7 +21,8 @@ const codeMirrorConfig = {
     extraKeys: {'Ctrl-Space': 'autocomplete'},
     lineNumbers: true,
     mode:  'text/html',
-    value: target.value
+    value: target.value,
+    autoCloseTags: true
 };
 
 /** @type {CodeMirror.Editor} */
