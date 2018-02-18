@@ -6,6 +6,11 @@ const target = document.querySelector('#code-editor-mount');
 /** @type {HTMLElement} */
 const output = document.querySelector('#output');
 
+const customComponentNames = [
+    '<MyComponent',
+    '<YourComponent'
+];
+
 /** @type {string} */
 // Default content to render.
 target.value = `<style>
@@ -24,6 +29,19 @@ const codeMirrorConfig = {
     value: target.value,
     autoCloseTags: true,
     showTrailingSpace: true
+};
+
+// We need to provide a list of tags in the autocomplete.
+const originalHTMLHint = CodeMirror.hint.html;
+
+// All we really do in this override, is to add our custom components to the
+// HTML autocomplete list.
+CodeMirror.hint.html = function(cm) {
+    const inner = originalHTMLHint(cm) || {from: cm.getCursor(), to: cm.getCursor(), list: []};
+
+    inner.list.unshift.apply(inner.list, customComponentNames);
+
+    return inner;
 };
 
 /** @type {CodeMirror.Editor} */
