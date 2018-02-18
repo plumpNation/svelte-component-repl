@@ -22,7 +22,8 @@ const codeMirrorConfig = {
     lineNumbers: true,
     mode:  'text/html',
     value: target.value,
-    autoCloseTags: true
+    autoCloseTags: true,
+    showTrailingSpace: true
 };
 
 /** @type {CodeMirror.Editor} */
