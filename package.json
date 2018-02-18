@@ -1,0 +1,10 @@
+{
+  "name": "prometheus-repl",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "devDependencies": {
+    "codemirror": "^5.34.0",
+    "eslint": "^4.18.0"
+  }
+}

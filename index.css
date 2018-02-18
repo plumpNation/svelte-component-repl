@@ -1,0 +1,11 @@
+main {
+    align-items: stretch;
+    display: flex;
+}
+
+#output,
+.CodeMirror {
+    border: 1px solid grey;
+    flex: 1;
+    margin: 1rem;
+}
