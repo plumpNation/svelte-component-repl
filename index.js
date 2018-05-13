@@ -20,9 +20,9 @@ const components = [
         source: '<h1>I am a svelte YourComponent</h1>'
     }
 ].map(component => {
-    component.compiled = compile(component);
+    const compiled = compile(component);
 
-    return component;
+    return {...compiled, ...component};
 });
 
 /** @type {string} */
@@ -115,16 +115,16 @@ function compile(component) {
         };
     }
 
-    const { code, map } = svelte.compile(component.source || '', {
+    const { js } = svelte.compile(component.source || '', {
         cascade: false,
         name: component.name,
-        filename: component.name + '.html',
+        filename: component.name + '.svelte',
         onwarn: warning => {
             warnings.push(warning);
         }
     });
 
-    return { code, map, warnings };
+    return { ...js, warnings };
 }
 
 function onChange(output) {
@@ -175,8 +175,17 @@ function mountReplace(target) {
 }
 
 function updateBundle(components) {
-    if (!components || !components.length) return;
-    if (components.some(c => !c.compiled)) return;
+    if (!components || !components.length) {
+        console.info('no components to bundle');
+
+        return;
+    }
+
+    if (components.some(c => !c.code)) {
+        console.warn('uncompiled components found');
+
+        return;
+    }
 
     // console.clear();
     console.log(`running Svelte compiler version %c${svelte.VERSION}`, 'font-weight: bold');
@@ -187,14 +196,14 @@ function updateBundle(components) {
     let warningCount = 0;
 
     components.forEach(component => {
-        const w = component.compiled.warnings.length;
+        const w = component.warnings.length;
 
         warningCount += w;
 
         if (w > 0) {
             console.group(`${component.name}.${component.type}: ${w} ${w === 1 ? 'warning' : 'warnings'}`);
 
-            component.compiled.warnings.forEach(warning => {
+            component.warnings.forEach(warning => {
                 console.warn(warning.message);
                 console.log(warning.frame);
             });
@@ -208,10 +217,7 @@ function updateBundle(components) {
             throw new TypeError(`Multiple ${component.name}.${component.type} components`);
         }
 
-        lookup[path] = {
-            code: component.compiled.code,
-            map: component.compiled.map
-        };
+        lookup[path] = component;
     });
 
     console.warn('warningCount', warningCount);
@@ -226,15 +232,20 @@ function updateBundle(components) {
 
     window.bundlePromise = rollup.rollup({
         input,
-        external: id => {
-            return id[0] !== '.';
-        },
+
+        external: id => id[0] !== '.',
+
         plugins: [{
             resolveId(importee, importer) {
                 if (importee[0] === '.') return importee;
             },
             load(id) {
-                if (id in lookup) return lookup[id];
+                if (id in lookup) {
+                    // {code, map}
+                    return lookup[id];
+                }
+
+                // if (id in lookup) return lookup[id];
 
                 if (id[0] === '.') {
                     throw new Error(`file does not exist`);
