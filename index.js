@@ -71,7 +71,7 @@ function setupEditor() {
     // All we really do in this override, is to add our custom components to the
     // HTML autocomplete list.
     CodeMirror.hint.html = function(cm) {
-        const componentNames = components.map(component => '<' + component.name);
+        const componentNames = componentsConfig.map(component => '<' + component.name);
         const inner = originalHTMLHint(cm) || {from: cm.getCursor(), to: cm.getCursor(), list: []};
 
         inner.list.unshift.apply(inner.list, componentNames);
@@ -147,7 +147,7 @@ function printCompilerWarnings(component) {
  */
 async function fetchComponents(components) {
     const requests = await components.map(component => {
-        const path = `${component.name}.${component.type}`;
+        const path = `components/${component.name}.${component.type}`;
 
         return fetch(path)
             .then(res => res.text())
