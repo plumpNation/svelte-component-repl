@@ -262,8 +262,6 @@ function updateBundle(components) {
             },
 
             load(id) {
-                debugger;
-
                 const appCode = components.find(component => './' + component.name === id);
 
                 return appCode;
