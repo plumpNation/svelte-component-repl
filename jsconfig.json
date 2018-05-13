@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "moduleResolution": "node",
+        "module": "es6",
+        "baseUrl": ".",
+        "checkJs": true,
+        "jsx": "preserve",
+        "lib": ["esnext", "dom"]
+    },
+
+    "exclude": [
+        "node_modules"
+    ]
+}

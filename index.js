@@ -1,5 +1,3 @@
-// @ts-check
-
 const store = {};
 
 /** @type {Repl.IComponentConfig[]} */
@@ -19,96 +17,24 @@ let renderer;
 init();
 
 async function init () {
-    setupEditor();
+    const editor = setupEditor();
 
     // Grab the component contents...
-    const components = await fetchComponents(componentsConfig);
+    const components = await loadComponentsSource(componentsConfig);
+    const appSource = createAppTemplate(editor.getValue(), components);
+
+    console.log(appSource);
+
+    components.push({
+        name: 'App',
+        type: 'svelte',
+        source: appSource
+    });
+
     // ...compile the contents to js using the svelte compiler.
     const compiled = await compileComponents(components);
 
     updateBundle(compiled);
-}
-
-function setupEditor() {
-    /** @type {HTMLTextAreaElement} */
-    const textarea = document.querySelector('#code-editor-mount');
-
-    /** @type {HTMLElement} */
-    const output = document.querySelector('#output');
-
-    /** @type {string} */
-    // Default content to render.
-    textarea.value = `<style>
-    .foobar,
-    MyComponent h1 {
-        color: red;
-    }
-</style>
-
-<h1 class="foobar">Dummy data</h1>
-
-<MyComponent></MyComponent>`;
-
-    /** @type {CodeMirror.EditorConfiguration} */
-    const codeMirrorConfig = {
-        extraKeys: {
-            'Ctrl-Space': 'autocomplete',
-            '"<"': 'autocomplete'
-        },
-        lineNumbers: true,
-        mode: 'text/html',
-        value: textarea.value,
-        autoCloseTags: true,
-        showTrailingSpace: true,
-        theme: 'ambiance'
-    };
-
-    // ///////////////////////////////////////// HINTING ///////////////////////////////////////////
-
-    // We need to provide a list of tags in the autocomplete.
-    const originalHTMLHint = CodeMirror.hint.html;
-
-    // All we really do in this override, is to add our custom components to the
-    // HTML autocomplete list.
-    CodeMirror.hint.html = function(cm) {
-        const componentNames = componentsConfig.map(component => '<' + component.name);
-        const inner = originalHTMLHint(cm) || {from: cm.getCursor(), to: cm.getCursor(), list: []};
-
-        inner.list.unshift.apply(inner.list, componentNames);
-
-        return inner;
-    };
-
-    function completeAfter(cm, pred) {
-        var cur = cm.getCursor();
-
-        if (!pred || pred()) {
-            setTimeout(function() {
-                if (!cm.state.completionActive) {
-                    cm.showHint({completeSingle: false});
-                }
-            }, 100);
-        }
-
-        return CodeMirror.Pass;
-    }
-
-    function completeIfAfterLt(cm) {
-        return completeAfter(cm, function () {
-            var cur = cm.getCursor();
-
-            return cm.getRange(CodeMirror.Pos(cur.line, cur.ch - 1), cur) === '<';
-        });
-    }
-
-    /** @type {CodeMirror.Editor} */
-    const codeMirror = CodeMirror(mountReplace(textarea), codeMirrorConfig);
-
-    renderer = () => {
-        render(output)(codeMirror);
-    };
-
-    codeMirror.on('change', _.throttle(render(output), 500));
 
     // initial render
     renderer();
@@ -122,6 +48,7 @@ function setupEditor() {
  * Prints out svelte compiler warnings.
  *
  * @param {Repl.ICompiledComponent} component Svelte compiler output for a component.
+ * @returns {string}
  */
 function printCompilerWarnings(component) {
     const w = component.warnings.length;
@@ -140,25 +67,62 @@ function printCompilerWarnings(component) {
     console.groupEnd();
 }
 
+function createAppTemplate(markup, components) {
+    // NOTE: we replace //imports//, **markup** and [components]
+    const template = `**markup**
+
+<script>
+    //imports//
+
+    export default {
+        components: {
+            [components]
+        }
+    };
+</script>`;
+
+    // Create es import formatters
+    const imports = components.map(component => {
+        return `import ${component.name} from './${component.name}';\n`;
+    }).join('');
+
+    // Format the list of components for the svelte `components` property
+    const componentNames = components
+        .map(component => `${component.name}`)
+        .join(',\n');
+
+    return template
+        .replace('**markup**', markup)
+        .replace('//imports//', imports)
+        .replace('[components]', componentNames);
+}
+
 /**
- * Fetches the file contents for the component files.
+ * Fetches the raw file contents and attaches it to the component.source property.
+ * For now we store them in the components folder. If you supply a `path` it should
+ * contain the filename in the path.
  *
  * @param {Repl.IComponentConfig[]} components
+ * @returns {Promise<Repl.IComponentConfig[]>}
  */
-async function fetchComponents(components) {
-    const requests = await components.map(component => {
-        const path = `components/${component.name}.${component.type}`;
-
-        return fetch(path)
-            .then(res => res.text())
-            .then(source => {
-                component.source = source;
-
-                return component;
-            });
-    });
+async function loadComponentsSource(components) {
+    const requests = await components.map(loadComponentSource);
 
     return Promise.all(requests);
+}
+
+/**
+ * Fetches the raw file contents and attaches it to the component.source property.
+ *
+ * @param {Repl.IComponentConfig} component
+ * @returns {Promise<Repl.IComponentConfig>}
+ */
+async function loadComponentSource(component) {
+    const path = component.path || `./components/${component.name}.${component.type}`;
+
+    const source = await fetch(path).then(res => res.text());
+
+    return {...component, source};
 }
 
 /**
@@ -193,6 +157,7 @@ function compileComponent(component) {
     const compileOptions = {
         cascade: false,
         name: component.name,
+        format: 'es',
         filename: component.name + '.svelte',
         onwarn: warning => {
             warnings.push(warning);
@@ -284,7 +249,7 @@ function updateBundle(components) {
     const importMap = new Map();
 
     // here we can move between different entry points
-    const input = './MyComponent.svelte';
+    const input = './App';
 
     window.bundlePromise = rollup.rollup({
         input,
@@ -297,16 +262,11 @@ function updateBundle(components) {
             },
 
             load(id) {
-                if (id in lookup) {
-                    // {code, map}
-                    return lookup[id];
-                }
+                debugger;
 
-                if (id[0] === '.') {
-                    throw new Error(`file does not exist`);
-                }
+                const appCode = components.find(component => './' + component.name === id);
 
-                return null;
+                return appCode;
             }
         }],
 
@@ -352,4 +312,89 @@ function updateBundle(components) {
     window.bundlePromise.cancel = () => {
         cancelled = true;
     };
+}
+
+// /////////////////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////////////////
+
+function setupEditor() {
+    /** @type {HTMLTextAreaElement} */
+    const textarea = document.querySelector('#code-editor-mount');
+
+    /** @type {HTMLElement} */
+    const output = document.querySelector('#output');
+
+    /** @type {string} */
+    // Default content to render.
+    textarea.value = `
+<h1 class="foobar">HelloWorld</h1>
+
+<p>Here is a component to play with. Goody.</p>
+
+<MyComponent></MyComponent>
+<YourComponent></YourComponent>`;
+
+    /** @type {CodeMirror.EditorConfiguration} */
+    const codeMirrorConfig = {
+        extraKeys: {
+            'Ctrl-Space': 'autocomplete',
+            '"<"': 'autocomplete'
+        },
+        lineNumbers: true,
+        mode: 'text/html',
+        value: textarea.value,
+        autoCloseTags: true,
+        showTrailingSpace: true,
+        theme: 'ambiance'
+    };
+
+    // ///////////////////////////////////////// HINTING ///////////////////////////////////////////
+
+    // We need to provide a list of tags in the autocomplete.
+    const originalHTMLHint = CodeMirror.hint.html;
+
+    // All we really do in this override, is to add our custom components to the
+    // HTML autocomplete list.
+    CodeMirror.hint.html = function(cm) {
+        const componentNames = componentsConfig.map(component => '<' + component.name);
+        const inner = originalHTMLHint(cm) || {from: cm.getCursor(), to: cm.getCursor(), list: []};
+
+        inner.list.unshift.apply(inner.list, componentNames);
+
+        return inner;
+    };
+
+    function completeAfter(cm, pred) {
+        var cur = cm.getCursor();
+
+        if (!pred || pred()) {
+            setTimeout(function() {
+                if (!cm.state.completionActive) {
+                    cm.showHint({completeSingle: false});
+                }
+            }, 100);
+        }
+
+        return CodeMirror.Pass;
+    }
+
+    function completeIfAfterLt(cm) {
+        return completeAfter(cm, function () {
+            var cur = cm.getCursor();
+
+            return cm.getRange(CodeMirror.Pos(cur.line, cur.ch - 1), cur) === '<';
+        });
+    }
+
+    /** @type {CodeMirror.Editor} */
+    const codeMirror = CodeMirror(mountReplace(textarea), codeMirrorConfig);
+
+    renderer = () => {
+        render(output)(codeMirror);
+    };
+
+    codeMirror.on('change', _.throttle(render(output), 500));
+
+    return codeMirror;
 }
