@@ -2,111 +2,128 @@
 
 const store = {};
 
-/** @type {HTMLTextAreaElement} */
-const textarea = document.querySelector('#code-editor-mount');
-
-/** @type {HTMLElement} */
-const output = document.querySelector('#output');
-
+/** @type {Repl.IComponentConfig[]} */
 const componentsConfig = [
     {
         name: 'MyComponent',
-        type: 'svelte',
-        source: '<h1>I am a svelte MyComponent</h1>'
+        type: 'svelte'
     },
     {
         name: 'YourComponent',
-        type: 'svelte',
-        source: '<h1>I am a svelte YourComponent</h1>'
+        type: 'svelte'
     }
 ];
 
-const components = compileComponents(componentsConfig);
+let renderer;
 
-/** @type {string} */
-// Default content to render.
-textarea.value = `<style>
-.foobar,
-MyComponent h1 {
-     color: red;
+init();
+
+async function init () {
+    setupEditor();
+
+    // Grab the component contents...
+    const components = await fetchComponents(componentsConfig);
+    // ...compile the contents to js using the svelte compiler.
+    const compiled = await compileComponents(components);
+
+    updateBundle(compiled);
 }
+
+function setupEditor() {
+    /** @type {HTMLTextAreaElement} */
+    const textarea = document.querySelector('#code-editor-mount');
+
+    /** @type {HTMLElement} */
+    const output = document.querySelector('#output');
+
+    /** @type {string} */
+    // Default content to render.
+    textarea.value = `<style>
+    .foobar,
+    MyComponent h1 {
+        color: red;
+    }
 </style>
 
 <h1 class="foobar">Dummy data</h1>
 
-<MyComponent></MyComponent>
-`;
+<MyComponent></MyComponent>`;
 
-/** @type {CodeMirror.EditorConfiguration} */
-const codeMirrorConfig = {
-    extraKeys: {
-        'Ctrl-Space': 'autocomplete',
-        '"<"': 'autocomplete'
-    },
-    lineNumbers: true,
-    mode: 'text/html',
-    value: textarea.value,
-    autoCloseTags: true,
-    showTrailingSpace: true,
-    theme: 'ambiance'
-};
+    /** @type {CodeMirror.EditorConfiguration} */
+    const codeMirrorConfig = {
+        extraKeys: {
+            'Ctrl-Space': 'autocomplete',
+            '"<"': 'autocomplete'
+        },
+        lineNumbers: true,
+        mode: 'text/html',
+        value: textarea.value,
+        autoCloseTags: true,
+        showTrailingSpace: true,
+        theme: 'ambiance'
+    };
 
-// ///////////////////////////////////////// HINTING ///////////////////////////////////////////////
+    // ///////////////////////////////////////// HINTING ///////////////////////////////////////////
 
-// We need to provide a list of tags in the autocomplete.
-const originalHTMLHint = CodeMirror.hint.html;
+    // We need to provide a list of tags in the autocomplete.
+    const originalHTMLHint = CodeMirror.hint.html;
 
-// All we really do in this override, is to add our custom components to the
-// HTML autocomplete list.
-CodeMirror.hint.html = function(cm) {
-    const componentNames = components.map(component => '<' + component.name);
-    const inner = originalHTMLHint(cm) || {from: cm.getCursor(), to: cm.getCursor(), list: []};
+    // All we really do in this override, is to add our custom components to the
+    // HTML autocomplete list.
+    CodeMirror.hint.html = function(cm) {
+        const componentNames = components.map(component => '<' + component.name);
+        const inner = originalHTMLHint(cm) || {from: cm.getCursor(), to: cm.getCursor(), list: []};
 
-    inner.list.unshift.apply(inner.list, componentNames);
+        inner.list.unshift.apply(inner.list, componentNames);
 
-    return inner;
-};
+        return inner;
+    };
 
-function completeAfter(cm, pred) {
-    var cur = cm.getCursor();
-
-    if (!pred || pred()) {
-        setTimeout(function() {
-            if (!cm.state.completionActive) {
-                cm.showHint({completeSingle: false});
-            }
-        }, 100);
-    }
-
-    return CodeMirror.Pass;
-  }
-
-function completeIfAfterLt(cm) {
-    return completeAfter(cm, function () {
+    function completeAfter(cm, pred) {
         var cur = cm.getCursor();
 
-        return cm.getRange(CodeMirror.Pos(cur.line, cur.ch - 1), cur) === '<';
-    });
+        if (!pred || pred()) {
+            setTimeout(function() {
+                if (!cm.state.completionActive) {
+                    cm.showHint({completeSingle: false});
+                }
+            }, 100);
+        }
+
+        return CodeMirror.Pass;
+    }
+
+    function completeIfAfterLt(cm) {
+        return completeAfter(cm, function () {
+            var cur = cm.getCursor();
+
+            return cm.getRange(CodeMirror.Pos(cur.line, cur.ch - 1), cur) === '<';
+        });
+    }
+
+    /** @type {CodeMirror.Editor} */
+    const codeMirror = CodeMirror(mountReplace(textarea), codeMirrorConfig);
+
+    renderer = () => {
+        render(output)(codeMirror);
+    };
+
+    codeMirror.on('change', _.throttle(render(output), 500));
+
+    // initial render
+    renderer();
 }
-
-/** @type {CodeMirror.Editor} */
-const codeMirror = CodeMirror(mountReplace(textarea), codeMirrorConfig);
-
-codeMirror.on('change', onChange(output));
-
-render(output)(codeMirror);
-
-updateBundle(components);
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////
 // /////////////////////////////////////////////////////////////////////////////////////////////////
 // /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
+ * Prints out svelte compiler warnings.
  *
- * @param {*} component Svelte compiler output for a component.
+ * @param {Repl.ICompiledComponent} component Svelte compiler output for a component.
  */
-function printWarnings(component) {
+function printCompilerWarnings(component) {
     const w = component.warnings.length;
 
     if (!w) {
@@ -123,41 +140,68 @@ function printWarnings(component) {
     console.groupEnd();
 }
 
-function compileComponents(components) {
-    return components.map(component => {
-        const compiled = compileComponent(component);
+/**
+ * Fetches the file contents for the component files.
+ *
+ * @param {Repl.IComponentConfig[]} components
+ */
+async function fetchComponents(components) {
+    const requests = await components.map(component => {
+        const path = `${component.name}.${component.type}`;
 
-        printWarnings(compiled);
+        return fetch(path)
+            .then(res => res.text())
+            .then(source => {
+                component.source = source;
 
-        return {...compiled, ...component};
+                return component;
+            });
     });
+
+    return Promise.all(requests);
 }
 
+/**
+ * Compile an array of components.
+ *
+ * @param {Repl.IComponentConfig[]} components
+ * @returns {Promise<Repl.ICompiledComponent[]>}
+ */
+async function compileComponents(components) {
+    const complilations = components
+        .filter(component => component.type === 'svelte')
+        .map((component, index) => {
+            const compiled = compileComponent(component);
+
+            printCompilerWarnings(compiled);
+
+            return {...compiled, ...components[index]};
+        });
+
+    return Promise.all(complilations);
+}
+
+/**
+ * Compile a component with the Svelte compiler.
+ *
+ * @param {Repl.IComponentConfig} component
+ * @returns {Repl.ICompiledComponent}
+ */
 function compileComponent(component) {
     const warnings = [];
 
-    if (component.type === 'js') {
-        return {
-            code: component.source,
-            map: null,
-            warnings
-        };
-    }
-
-    const { js } = svelte.compile(component.source || '', {
+    const compileOptions = {
         cascade: false,
         name: component.name,
         filename: component.name + '.svelte',
         onwarn: warning => {
             warnings.push(warning);
         }
-    });
+    };
 
-    return { ...js, warnings };
-}
+    const {js} = svelte.compile(component.source || '', compileOptions);
 
-function onChange(output) {
-    return _.throttle(render(output), 500);
+    return {...js, warnings};
 }
 
 function render(output) {
@@ -251,6 +295,7 @@ function updateBundle(components) {
             resolveId(importee, importer) {
                 if (importee[0] === '.') return importee;
             },
+
             load(id) {
                 if (id in lookup) {
                     // {code, map}
@@ -264,6 +309,7 @@ function updateBundle(components) {
                 return null;
             }
         }],
+
         onwarn(warning) {
             if (warning.code === 'MISSING_GLOBAL_NAME') return;
 
@@ -294,7 +340,7 @@ function updateBundle(components) {
             store.bundleError = null;
             store.runtimeError = null;
 
-            render(output)(codeMirror);
+            renderer();
         });
     })
     .catch(err => {
