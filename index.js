@@ -318,7 +318,7 @@ function setupEditor() {
     const codeMirrorConfig = {
         extraKeys: {
             'Ctrl-Space': 'autocomplete',
-            '"<"': 'autocomplete'
+            '\'<\'': 'autocomplete'
         },
         lineNumbers: true,
         mode: 'text/html',
