@@ -88,13 +88,17 @@ function createAppTemplate(markup, components) {
     };
 </script>`;
 
+    // If the component name cannot be found, we probably don't need it.
+    const componentsFoundInMarkup = components
+        .filter(component => markup.includes(component.name));
+
     // Create es import formatters
-    const imports = components.map(component => {
+    const imports = componentsFoundInMarkup.map(component => {
         return `import ${component.name} from './${component.name}';\n`;
     }).join('');
 
     // Format the list of components for the svelte `components` property
-    const componentNames = components
+    const componentNames = componentsFoundInMarkup
         .map(component => `${component.name}`)
         .join(',\n');
 

@@ -19,3 +19,9 @@ output from the editor, wrapped in svelte syntax, compiled and bundled.
 
 The compiler is loaded from a CDN in the index.html. This is a completely
 static REPL, I am trying to avoid the need to have a server for any compilation.
+
+## Todo
+
+- cache Map() of loaded components (except the App)
+- Add styles in the preview iframe
+- Attribute hints
