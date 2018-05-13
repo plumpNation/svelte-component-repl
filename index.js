@@ -1,5 +1,3 @@
-const store = {};
-
 /** @type {Repl.IComponentConfig[]} */
 const componentsConfig = [
     {
@@ -12,14 +10,18 @@ const componentsConfig = [
     }
 ];
 
-init()
-    .catch(e => console.log(e));
+init();
+    // .catch(e => console.log(e));
+
+let components;
 
 async function init () {
     const editor = setupEditor();
 
-    // Grab the component contents...
-    const components = await loadComponentsSource(componentsConfig);
+    // Grab the component contents... Keep them available to save another load.
+    // @todo: Will need to keep a cache.
+    components = await loadComponentSourceFiles(componentsConfig);
+
     const bundle = await build(editor.getValue(), components);
 
     // initial render
@@ -35,18 +37,15 @@ async function init () {
  * @param {string} markup The html string from the editor
  * @param {Repl.IComponentConfig[]} components The list of components
  */
-async function build(markup, components) {
-    const appSource = createAppTemplate(markup, components);
-
+async function build(markup = '', components = []) {
     const componentsAndApp = components.concat({
         name: 'App',
         type: 'svelte',
-        source: appSource
+        source: createAppTemplate(markup, components)
     });
 
     // ...compile the contents to js using the svelte compiler.
-    const compiled = await compileComponents(componentsAndApp);
-
+    const compiled = compileComponents(componentsAndApp);
     const bundle = await createBundle(compiled);
 
     return bundle;
@@ -113,7 +112,7 @@ function createAppTemplate(markup, components) {
  * @param {Repl.IComponentConfig[]} components
  * @returns {Promise<Repl.IComponentConfig[]>}
  */
-async function loadComponentsSource(components) {
+async function loadComponentSourceFiles(components) {
     const requests = await components.map(loadComponentSource);
 
     return Promise.all(requests);
@@ -137,9 +136,9 @@ async function loadComponentSource(component) {
  * Compile an array of components.
  *
  * @param {Repl.IComponentConfig[]} components
- * @returns {Promise<Repl.ICompiledComponent[]>}
+ * @returns {Repl.ICompiledComponent[]}
  */
-async function compileComponents(components) {
+function compileComponents(components) {
     console.info(`Svelte compiler version %c${svelte.VERSION}`, 'font-weight: bold');
 
     const complilations = components
@@ -152,7 +151,7 @@ async function compileComponents(components) {
             return {...compiled, ...components[index]};
         });
 
-    return Promise.all(complilations);
+    return complilations;
 }
 
 /**
@@ -241,7 +240,7 @@ async function createBundle(components) {
     }
 
     // https://rollupjs.org/guide/en#rollup-rollup
-    const bundle = await rollup.rollup({
+    const bundler = await rollup.rollup({
         input: './App', // relative syntax, no file extension
 
         // Comma-separate list of module IDs to exclude
@@ -268,30 +267,21 @@ async function createBundle(components) {
 
     let uid = 1;
 
-    const {code, map} = await bundle.generate({
+    const {code, map} = await bundler.generate({
         format: 'iife',
         name: 'App',
-
-        globals: id => {
-            const name = `import_${uid++}`;
-
-            return name;
-        },
-
+        globals: id => `import_${uid++}`,
         sourcemap: true
     });
 
     // Why is this is a store?
-    store.bundle = {
+    const bundle = {
         code,
         map,
-        imports: bundle.imports
+        imports: bundler.imports
     };
 
-    store.bundleError = null;
-    store.runtimeError = null;
-
-    return store.bundle;
+    return bundle;
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -367,7 +357,11 @@ function setupEditor() {
     /** @type {CodeMirror.Editor} */
     const codeMirror = CodeMirror(mountReplace(textarea), codeMirrorConfig);
 
-    codeMirror.on('change', _.throttle(() => build(codeMirror.getValue(), componentsConfig), 500));
+    codeMirror.on('change', _.throttle(async editor => {
+        const bundle = await build(editor.getValue(), components);
+
+        render(bundle);
+    }, 500));
 
     return codeMirror;
 }
