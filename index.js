@@ -322,7 +322,10 @@ function setupEditor() {
     const codeMirrorConfig = {
         extraKeys: {
             'Ctrl-Space': 'autocomplete',
-            '\'<\'': 'autocomplete'
+            "'<'": completeAfter,
+            "'/'": completeIfAfterLt,
+            "' '": completeIfInTag,
+            "'='": completeIfInTag,
         },
         lineNumbers: true,
         mode: 'text/html',
@@ -360,6 +363,22 @@ function setupEditor() {
         }
 
         return CodeMirror.Pass;
+    }
+
+    function completeIfInTag(cm) {
+        return completeAfter(cm, function() {
+            const tok = cm.getTokenAt(cm.getCursor());
+
+            if (tok.type === 'string' &&
+                !/['"]/.test(tok.string.charAt(tok.string.length - 1)) || tok.string.length == 1
+            ) {
+                return false;
+            }
+
+            const inner = CodeMirror.innerMode(cm.getMode(), tok.state).state;
+
+            return inner.tagName;
+        });
     }
 
     function completeIfAfterLt(cm) {

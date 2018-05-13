@@ -22,6 +22,10 @@ static REPL, I am trying to avoid the need to have a server for any compilation.
 
 ## Todo
 
-- cache Map() of loaded components (except the App)
-- Add styles in the preview iframe
-- Attribute hints
+These are just possibilities, but placed in order or priority.
+
+- Add styles in the preview iframe.
+- Attribute hints.
+- Cache fetched raw component contents.
+- Modularise and add a build.
+- support script tags
