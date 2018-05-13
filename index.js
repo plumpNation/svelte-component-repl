@@ -3,7 +3,7 @@
 const store = {};
 
 /** @type {HTMLTextAreaElement} */
-const target = document.querySelector('#code-editor-mount');
+const textarea = document.querySelector('#code-editor-mount');
 
 /** @type {HTMLElement} */
 const output = document.querySelector('#output');
@@ -27,7 +27,7 @@ const components = [
 
 /** @type {string} */
 // Default content to render.
-target.value = `<style>
+textarea.value = `<style>
 .foobar,
 MyComponent h1 {
      color: red;
@@ -41,13 +41,19 @@ MyComponent h1 {
 
 /** @type {CodeMirror.EditorConfiguration} */
 const codeMirrorConfig = {
-    extraKeys: {'Ctrl-Space': 'autocomplete'},
+    extraKeys: {
+        'Ctrl-Space': 'autocomplete',
+        '"<"': 'autocomplete'
+    },
     lineNumbers: true,
-    mode:  'text/html',
-    value: target.value,
+    mode: 'text/html',
+    value: textarea.value,
     autoCloseTags: true,
-    showTrailingSpace: true
+    showTrailingSpace: true,
+    theme: 'ambiance'
 };
+
+// ///////////////////////////////////////// HINTING ///////////////////////////////////////////////
 
 // We need to provide a list of tags in the autocomplete.
 const originalHTMLHint = CodeMirror.hint.html;
@@ -55,16 +61,38 @@ const originalHTMLHint = CodeMirror.hint.html;
 // All we really do in this override, is to add our custom components to the
 // HTML autocomplete list.
 CodeMirror.hint.html = function(cm) {
+    const componentNames = components.map(component => '<' + component.name);
     const inner = originalHTMLHint(cm) || {from: cm.getCursor(), to: cm.getCursor(), list: []};
-    const componentNames = components.map(customComponent => '<' + customComponent.name);
 
     inner.list.unshift.apply(inner.list, componentNames);
 
     return inner;
 };
 
+function completeAfter(cm, pred) {
+    var cur = cm.getCursor();
+
+    if (!pred || pred()) {
+        setTimeout(function() {
+            if (!cm.state.completionActive) {
+                cm.showHint({completeSingle: false});
+            }
+        }, 100);
+    }
+
+    return CodeMirror.Pass;
+  }
+
+function completeIfAfterLt(cm) {
+    return completeAfter(cm, function () {
+        var cur = cm.getCursor();
+
+        return cm.getRange(CodeMirror.Pos(cur.line, cur.ch - 1), cur) === '<';
+    });
+}
+
 /** @type {CodeMirror.Editor} */
-const codeMirror = CodeMirror(mountReplace(target), codeMirrorConfig);
+const codeMirror = CodeMirror(mountReplace(textarea), codeMirrorConfig);
 
 codeMirror.on('change', onChange(output));
 
