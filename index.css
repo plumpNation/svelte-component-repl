@@ -3,7 +3,7 @@ main {
     display: flex;
 }
 
-#output,
+#preview,
 .CodeMirror {
     border: 1px solid grey;
     flex: 1;

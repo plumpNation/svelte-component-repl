@@ -1,1 +1,1 @@
-<h1>YourComponent.svelte</h1>
+<h1>YourComponent.svelte {message || ''}</h1>

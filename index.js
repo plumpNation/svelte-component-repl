@@ -22,7 +22,7 @@ async function init () {
     // @todo: Will need to keep a cache.
     components = await loadComponentSourceFiles(componentsConfig);
 
-    const bundle = await build(editor.getValue(), components);
+    const bundle = await build(editor.getValue());
 
     // initial render
     render(bundle);
@@ -35,9 +35,9 @@ async function init () {
 /**
  *
  * @param {string} markup The html string from the editor
- * @param {Repl.IComponentConfig[]} components The list of components
+ * @returns {Promise<Repl.IBundle>} The bundle of view code for the preview.
  */
-async function build(markup = '', components = []) {
+async function build(markup = '') {
     const componentsAndApp = components.concat({
         name: 'App',
         type: 'svelte',
@@ -58,7 +58,7 @@ async function build(markup = '', components = []) {
  * @returns {string}
  */
 function printCompilerWarnings(component) {
-    const w = component.warnings.length;
+    const w = component && component.warnings && component.warnings.length;
 
     if (!w) {
         return;
@@ -146,7 +146,9 @@ function compileComponents(components) {
         .map((component, index) => {
             const compiled = compileComponent(component);
 
-            printCompilerWarnings(compiled);
+            if (compiled) {
+                printCompilerWarnings(compiled);
+            }
 
             return {...compiled, ...components[index]};
         });
@@ -173,16 +175,18 @@ function compileComponent(component) {
         }
     };
 
-    const {js} = svelte.compile(component.source || '', compileOptions);
+    try {
+        const {js} = svelte.compile(component.source || '', compileOptions);
 
-    return {...js, warnings};
+        return {...js, warnings};
+    } catch (e) {}
 }
 
 function render(bundle) {
-    /** @type {HTMLElement} */
-    const output = document.querySelector('#output');
+    /** @type {HTMLIFrameElement} */
+    const preview = document.querySelector('#preview');
 
-    output.onload = () => {
+    preview.onload = () => {
         let markup = `
             <App></App>
 
@@ -196,18 +200,22 @@ function render(bundle) {
                 console.log('App code running');
             </script>`;
 
-        output.contentDocument.body.innerHTML = markup;
+        preview.contentDocument.body.innerHTML = markup;
 
         // We need to eval the js since it's been injected.
-        const scriptTags = output.contentDocument.body.getElementsByTagName('script');
+        const scriptTags = preview.contentDocument.body.getElementsByTagName('script');
 
         [].forEach.call(scriptTags, scriptTag => {
-            output.contentWindow.eval(scriptTag.text);
+            try {
+                preview.contentWindow.eval(scriptTag.text);
+            } catch(err) {
+                console.warn('eval of scripts failed');
+            }
         });
     };
 
     // @TODO: See how to garbage collect eval() scripts.
-    output.src = 'about:blank';
+    preview.src = 'about:blank';
 }
 
 /**
@@ -226,6 +234,10 @@ function mountReplace(target) {
     };
 }
 
+/**
+ * @param {Repl.ICompiledComponent[]} components
+ * @returns {Promise<Repl.IBundle>}
+ */
 async function createBundle(components) {
     if (!components || !components.length) {
         console.info('no components to bundle');
@@ -290,7 +302,7 @@ async function createBundle(components) {
 
 function setupEditor() {
     /** @type {HTMLTextAreaElement} */
-    const textarea = document.querySelector('#code-editor-mount');
+    const textarea = document.querySelector('#editor');
 
     /** @type {string} */
     // Default content to render.
@@ -358,9 +370,13 @@ function setupEditor() {
     const codeMirror = CodeMirror(mountReplace(textarea), codeMirrorConfig);
 
     codeMirror.on('change', _.throttle(async editor => {
-        const bundle = await build(editor.getValue(), components);
+        const bundle = await build(editor.getValue());
 
-        render(bundle);
+        if (bundle) {
+            return render(bundle);
+        }
+
+        console.warn('Hey, there was no bundle')
     }, 500));
 
     return codeMirror;
