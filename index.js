@@ -20,18 +20,7 @@ async function init () {
 
     // Grab the component contents...
     const components = await loadComponentsSource(componentsConfig);
-    const appSource = createAppTemplate(editor.getValue(), components);
-
-    components.push({
-        name: 'App',
-        type: 'svelte',
-        source: appSource
-    });
-
-    // ...compile the contents to js using the svelte compiler.
-    const compiled = await compileComponents(components);
-
-    const bundle = await createBundle(compiled);
+    const bundle = await build(editor.getValue(), components);
 
     // initial render
     render(bundle);
@@ -40,6 +29,28 @@ async function init () {
 // /////////////////////////////////////////////////////////////////////////////////////////////////
 // /////////////////////////////////////////////////////////////////////////////////////////////////
 // /////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ *
+ * @param {string} markup The html string from the editor
+ * @param {Repl.IComponentConfig[]} components The list of components
+ */
+async function build(markup, components) {
+    const appSource = createAppTemplate(markup, components);
+
+    const componentsAndApp = components.concat({
+        name: 'App',
+        type: 'svelte',
+        source: appSource
+    });
+
+    // ...compile the contents to js using the svelte compiler.
+    const compiled = await compileComponents(componentsAndApp);
+
+    const bundle = await createBundle(compiled);
+
+    return bundle;
+}
 
 /**
  * Prints out svelte compiler warnings.
@@ -356,7 +367,7 @@ function setupEditor() {
     /** @type {CodeMirror.Editor} */
     const codeMirror = CodeMirror(mountReplace(textarea), codeMirrorConfig);
 
-    // codeMirror.on('change', _.throttle(renderer, 500));
+    codeMirror.on('change', _.throttle(() => build(codeMirror.getValue(), componentsConfig), 500));
 
     return codeMirror;
 }
