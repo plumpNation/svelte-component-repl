@@ -8,7 +8,7 @@ const textarea = document.querySelector('#code-editor-mount');
 /** @type {HTMLElement} */
 const output = document.querySelector('#output');
 
-const components = [
+const componentsConfig = [
     {
         name: 'MyComponent',
         type: 'svelte',
@@ -19,11 +19,9 @@ const components = [
         type: 'svelte',
         source: '<h1>I am a svelte YourComponent</h1>'
     }
-].map(component => {
-    const compiled = compile(component);
+];
 
-    return {...compiled, ...component};
-});
+const components = compileComponents(componentsConfig);
 
 /** @type {string} */
 // Default content to render.
@@ -104,7 +102,38 @@ updateBundle(components);
 // /////////////////////////////////////////////////////////////////////////////////////////////////
 // /////////////////////////////////////////////////////////////////////////////////////////////////
 
-function compile(component) {
+/**
+ *
+ * @param {*} component Svelte compiler output for a component.
+ */
+function printWarnings(component) {
+    const w = component.warnings.length;
+
+    if (!w) {
+        return;
+    }
+
+    console.group(`${component.name}.${component.type}: ${w} ${w === 1 ? 'warning' : 'warnings'}`);
+
+    component.warnings.forEach(warning => {
+        console.warn(warning.message);
+        console.log(warning.frame);
+    });
+
+    console.groupEnd();
+}
+
+function compileComponents(components) {
+    return components.map(component => {
+        const compiled = compileComponent(component);
+
+        printWarnings(compiled);
+
+        return {...compiled, ...component};
+    });
+}
+
+function compileComponent(component) {
     const warnings = [];
 
     if (component.type === 'js') {
@@ -187,30 +216,15 @@ function updateBundle(components) {
         return;
     }
 
-    // console.clear();
     console.log(`running Svelte compiler version %c${svelte.VERSION}`, 'font-weight: bold');
 
-    if (window.bundlePromise) window.bundlePromise.cancel();
+    if (window.bundlePromise) {
+        window.bundlePromise.cancel();
+    }
 
     const lookup = {};
-    let warningCount = 0;
 
     components.forEach(component => {
-        const w = component.warnings.length;
-
-        warningCount += w;
-
-        if (w > 0) {
-            console.group(`${component.name}.${component.type}: ${w} ${w === 1 ? 'warning' : 'warnings'}`);
-
-            component.warnings.forEach(warning => {
-                console.warn(warning.message);
-                console.log(warning.frame);
-            });
-
-            console.groupEnd();
-        }
-
         const path = `./${component.name}.${component.type}`;
 
         if (path in lookup) {
@@ -219,8 +233,6 @@ function updateBundle(components) {
 
         lookup[path] = component;
     });
-
-    console.warn('warningCount', warningCount);
 
     let cancelled = false;
 
