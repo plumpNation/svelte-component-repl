@@ -257,8 +257,6 @@ function updateBundle(components) {
                     return lookup[id];
                 }
 
-                // if (id in lookup) return lookup[id];
-
                 if (id[0] === '.') {
                     throw new Error(`file does not exist`);
                 }
