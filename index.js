@@ -12,9 +12,8 @@ const componentsConfig = [
     }
 ];
 
-let renderer;
-
-init();
+init()
+    .catch(e => console.log(e));
 
 async function init () {
     const editor = setupEditor();
@@ -22,8 +21,6 @@ async function init () {
     // Grab the component contents...
     const components = await loadComponentsSource(componentsConfig);
     const appSource = createAppTemplate(editor.getValue(), components);
-
-    console.log(appSource);
 
     components.push({
         name: 'App',
@@ -34,10 +31,10 @@ async function init () {
     // ...compile the contents to js using the svelte compiler.
     const compiled = await compileComponents(components);
 
-    updateBundle(compiled);
+    const bundle = await createBundle(compiled);
 
     // initial render
-    renderer();
+    render(bundle);
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -132,6 +129,8 @@ async function loadComponentSource(component) {
  * @returns {Promise<Repl.ICompiledComponent[]>}
  */
 async function compileComponents(components) {
+    console.info(`Svelte compiler version %c${svelte.VERSION}`, 'font-weight: bold');
+
     const complilations = components
         .filter(component => component.type === 'svelte')
         .map((component, index) => {
@@ -169,31 +168,36 @@ function compileComponent(component) {
     return {...js, warnings};
 }
 
-function render(output) {
-    return editor => {
-        let markup = '';
+function render(bundle) {
+    /** @type {HTMLElement} */
+    const output = document.querySelector('#output');
 
-        if (store.bundle) {
-            markup += `<script>
-                ${store.bundle.code}
+    output.onload = () => {
+        let markup = `
+            <App></App>
 
-                store.target = document.querySelector('MyComponent');
+            <script>
+                ${bundle.code}
 
-                new MyComponent({target: store.target});
+                const target = document.querySelector('App');
+
+                new App({target});
+
+                console.log('App code running');
             </script>`;
-        }
 
-        markup += editor.doc.getValue();
+        output.contentDocument.body.innerHTML = markup;
 
-        // not great
-        output.innerHTML = markup;
-
-        const scriptTags = output.getElementsByTagName('script');
+        // We need to eval the js since it's been injected.
+        const scriptTags = output.contentDocument.body.getElementsByTagName('script');
 
         [].forEach.call(scriptTags, scriptTag => {
-            eval(scriptTag.text);
+            output.contentWindow.eval(scriptTag.text);
         });
     };
+
+    // @TODO: See how to garbage collect eval() scripts.
+    output.src = 'about:blank';
 }
 
 /**
@@ -212,7 +216,7 @@ function mountReplace(target) {
     };
 }
 
-function updateBundle(components) {
+async function createBundle(components) {
     if (!components || !components.length) {
         console.info('no components to bundle');
 
@@ -225,35 +229,11 @@ function updateBundle(components) {
         return;
     }
 
-    console.log(`running Svelte compiler version %c${svelte.VERSION}`, 'font-weight: bold');
+    // https://rollupjs.org/guide/en#rollup-rollup
+    const bundle = await rollup.rollup({
+        input: './App', // relative syntax, no file extension
 
-    if (window.bundlePromise) {
-        window.bundlePromise.cancel();
-    }
-
-    const lookup = {};
-
-    components.forEach(component => {
-        const path = `./${component.name}.${component.type}`;
-
-        if (path in lookup) {
-            throw new TypeError(`Multiple ${component.name}.${component.type} components`);
-        }
-
-        lookup[path] = component;
-    });
-
-    let cancelled = false;
-
-    let uid = 1;
-    const importMap = new Map();
-
-    // here we can move between different entry points
-    const input = './App';
-
-    window.bundlePromise = rollup.rollup({
-        input,
-
+        // Comma-separate list of module IDs to exclude
         external: id => id[0] !== '.',
 
         plugins: [{
@@ -273,43 +253,34 @@ function updateBundle(components) {
 
             console.warn(warning.message);
         }
-    })
-    .then(bundle => {
-        if (cancelled) return;
-
-        return bundle.generate({
-            format: 'iife',
-            name: 'MyComponent',
-            globals: id => {
-                const name = `import_${uid++}`;
-                importMap.set(id, name);
-                return name;
-            },
-            sourcemap: true
-        })
-        .then(({ code, map }) => {
-            store.bundle = {
-                code,
-                map,
-                imports: bundle.imports,
-                importMap
-            };
-
-            store.bundleError = null;
-            store.runtimeError = null;
-
-            renderer();
-        });
-    })
-    .catch(err => {
-        console.error(err.stack);
-
-        store.bundleError = err;
     });
 
-    window.bundlePromise.cancel = () => {
-        cancelled = true;
+    let uid = 1;
+
+    const {code, map} = await bundle.generate({
+        format: 'iife',
+        name: 'App',
+
+        globals: id => {
+            const name = `import_${uid++}`;
+
+            return name;
+        },
+
+        sourcemap: true
+    });
+
+    // Why is this is a store?
+    store.bundle = {
+        code,
+        map,
+        imports: bundle.imports
     };
+
+    store.bundleError = null;
+    store.runtimeError = null;
+
+    return store.bundle;
 }
 
 // /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -319,9 +290,6 @@ function updateBundle(components) {
 function setupEditor() {
     /** @type {HTMLTextAreaElement} */
     const textarea = document.querySelector('#code-editor-mount');
-
-    /** @type {HTMLElement} */
-    const output = document.querySelector('#output');
 
     /** @type {string} */
     // Default content to render.
@@ -388,11 +356,7 @@ function setupEditor() {
     /** @type {CodeMirror.Editor} */
     const codeMirror = CodeMirror(mountReplace(textarea), codeMirrorConfig);
 
-    renderer = () => {
-        render(output)(codeMirror);
-    };
-
-    codeMirror.on('change', _.throttle(render(output), 500));
+    // codeMirror.on('change', _.throttle(renderer, 500));
 
     return codeMirror;
 }
